@@ -45,6 +45,8 @@ static NSString *const kMSTestGroupId = @"GroupId";
  */
 @property(nonatomic) XCTestExpectation *channelEndJobExpectation;
 
+@property(nonatomic, weak) dispatch_queue_t dispatchQueue;
+
 @end
 
 @implementation MSChannelUnitDefaultTests
@@ -63,6 +65,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 }
 
 - (void)tearDown {
+  [self waitDispatchQueue];
 
   // Stop mocks.
   [self.storageMock stopMocking];
@@ -81,9 +84,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   NSObject *object = [NSObject new];
   __block NSDate *date = [[NSDate alloc] initWithTimeIntervalSince1970:3000];
   OCMStub([dateMock date]).andReturn(date);
-
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
 
   // Configure channel with custom interval.
   channel.configuration = [[MSChannelUnitConfiguration alloc] initWithGroupId:kMSTestGroupId
@@ -97,7 +98,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 
   // Trigger checkPengingLogs. Should save timestamp now.
   [channel enqueueItem:[self getValidMockLog] flags:MSFlagsDefault];
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -116,8 +117,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testCustomFlushIntervalSending200Logs {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSUInteger flushInterval = 600;
   NSUInteger batchSizeLimit = 50;
@@ -177,7 +177,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel checkPendingLogs];
 
   // Try to release one batch.
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     // Check 3 batches sent.
     assertThatInt(sendCount, equalToInt(3));
     XCTAssertNotNil(ingestionBlock);
@@ -188,11 +188,11 @@ static NSString *const kMSTestGroupId = @"GroupId";
     }
 
     // Then
-    dispatch_async(queue, ^{
+    dispatch_async(channel.logsDispatchQueue, ^{
       // Check 4th batch sent.
       assertThatInt(sendCount, equalToInt(4));
 
-      [self enqueueChannelEndJobExpectation:queue];
+      [self enqueueChannelEndJobExpectation];
     });
   });
 
@@ -213,8 +213,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testLogsFlushedImmediatelyWhenIntervalIsOver {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id dateMock = OCMClassMock([NSDate class]);
   channel.itemsCount = 5;
@@ -234,7 +233,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   // When
   // Trigger checkPendingLogs
   [channel enqueueItem:[self getValidMockLog] flags:MSFlagsDefault];
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -254,8 +253,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testLogsNotFlushedImmediatelyWhenIntervalIsCustom {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSUInteger batchSizeLimit = 4;
   int itemsToAdd = 8;
@@ -272,7 +270,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   for (NSUInteger i = 0; i < itemsToAdd; i++) {
     [channel enqueueItem:[self getValidMockLog] flags:MSFlagsDefault];
   }
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -293,8 +291,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   // If
   id dateMock = OCMClassMock([NSDate class]);
   NSUInteger flushInterval = 2000;
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
 
   // Configure channel.
   channel.configuration = [[MSChannelUnitConfiguration alloc] initWithGroupId:kMSTestGroupId
@@ -320,8 +317,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   // If
   id dateMock = OCMClassMock([NSDate class]);
   NSUInteger flushInterval = 2000;
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
 
   // Configure channel.
   channel.configuration = [[MSChannelUnitConfiguration alloc] initWithGroupId:kMSTestGroupId
@@ -348,8 +344,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   // If
   id dateMock = OCMClassMock([NSDate class]);
   NSUInteger flushInterval = 2000;
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
 
   // Configure channel.
   channel.configuration = [[MSChannelUnitConfiguration alloc] initWithGroupId:kMSTestGroupId
@@ -375,8 +370,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 
   // If
   id dateMock = OCMClassMock([NSDate class]);
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
 
   // Configure channel.
   channel.configuration = [[MSChannelUnitConfiguration alloc] initWithGroupId:kMSTestGroupId
@@ -402,8 +396,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 
   // If
   id dateMock = OCMClassMock([NSDate class]);
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
 
   // Configure channel.
   channel.configuration = [[MSChannelUnitConfiguration alloc] initWithGroupId:kMSTestGroupId
@@ -426,8 +419,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 }
 
 - (void)testNewInstanceWasInitialisedCorrectly {
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   assertThat(channel, notNilValue());
   assertThat(channel.configuration, equalTo(self.configuration));
   assertThat(channel.ingestion, equalTo(self.ingestionMock));
@@ -438,8 +430,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testLogsSentWithSuccess {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id delegateMock = OCMProtocolMock(@protocol(MSChannelDelegate));
   __block MSSendAsyncCompletionHandler ingestionBlock;
@@ -490,20 +481,20 @@ static NSString *const kMSTestGroupId = @"GroupId";
   OCMExpect([self.storageMock deleteLogsWithBatchId:expectedBatchId groupId:kMSTestGroupId]);
 
   // When
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     // Enqueue now that the delegate is set.
     [channel enqueueItem:enqueuedLog flags:MSFlagsDefault];
 
     // Try to release one batch.
-    dispatch_async(queue, ^{
+    dispatch_async(channel.logsDispatchQueue, ^{
       XCTAssertNotNil(ingestionBlock);
       if (ingestionBlock) {
         ingestionBlock([@(1) stringValue], responseMock, nil, nil);
       }
 
       // Then
-      dispatch_async(queue, ^{
-        [self enqueueChannelEndJobExpectation:queue];
+      dispatch_async(channel.logsDispatchQueue, ^{
+        [self enqueueChannelEndJobExpectation];
       });
     });
   });
@@ -522,14 +513,14 @@ static NSString *const kMSTestGroupId = @"GroupId";
                                    XCTFail(@"Expectation Failed with error: %@", error);
                                  }
                                }];
+
   [responseMock stopMocking];
 }
 
 - (void)testDelegateDeadlock {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   __block NSObject *lock = [NSObject new], *syncCallback = [NSObject new];
 
   // Needed for waiting start of background thread.
@@ -571,7 +562,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 
   // Enqueue item from main thread.
   [channel enqueueItem:mockLog1 flags:MSFlagsNormal];
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -587,8 +578,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testLogsSentWithFailure {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id delegateMock = OCMProtocolMock(@protocol(MSChannelDelegate));
   __block MSSendAsyncCompletionHandler ingestionBlock;
@@ -639,19 +629,19 @@ static NSString *const kMSTestGroupId = @"GroupId";
   OCMReject([self.storageMock deleteLogsWithBatchId:expectedBatchId groupId:kMSTestGroupId]);
 
   // When
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     // Enqueue now that the delegate is set.
     [channel enqueueItem:enqueuedLog flags:MSFlagsDefault];
 
     // Try to release one batch.
-    dispatch_async(queue, ^{
+    dispatch_async(channel.logsDispatchQueue, ^{
       XCTAssertNotNil(ingestionBlock);
       if (ingestionBlock) {
         ingestionBlock([@(1) stringValue], responseMock, nil, nil);
       }
 
       // Then
-      [self enqueueChannelEndJobExpectation:queue];
+      [self enqueueChannelEndJobExpectation];
     });
   });
 
@@ -670,14 +660,14 @@ static NSString *const kMSTestGroupId = @"GroupId";
                                    XCTFail(@"Expectation Failed with error: %@", error);
                                  }
                                }];
+
   [responseMock stopMocking];
 }
 
 - (void)testEnqueuingItemsWillIncreaseCounter {
 
-  // If.
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  // If
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   MSChannelUnitConfiguration *config = [[MSChannelUnitConfiguration alloc] initWithGroupId:kMSTestGroupId
                                                                                   priority:MSPriorityDefault
@@ -691,7 +681,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   for (int i = 1; i <= itemsToAdd; i++) {
     [channel enqueueItem:[self getValidMockLog] flags:MSFlagsDefault];
   }
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -706,8 +696,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testNotCheckingPendingLogsOnEnqueueFailure {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   channel.configuration = [[MSChannelUnitConfiguration alloc] initWithGroupId:kMSTestGroupId
                                                                      priority:MSPriorityDefault
@@ -724,7 +713,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   for (int i = 1; i <= itemsToAdd; i++) {
     [channel enqueueItem:[self getValidMockLog] flags:MSFlagsDefault];
   }
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -740,14 +729,14 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testEnqueueCriticalItem {
 
   // If.
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id<MSLog> mockLog = [self getValidMockLog];
 
   // When
   [channel enqueueItem:mockLog flags:MSFlagsCritical];
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -762,14 +751,13 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testEnqueueNonCriticalItem {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id<MSLog> mockLog = [self getValidMockLog];
 
   // When
   [channel enqueueItem:mockLog flags:MSFlagsNormal];
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -784,14 +772,13 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testEnqueueItemWithFlagsDefault {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id<MSLog> mockLog = [self getValidMockLog];
 
   // When
   [channel enqueueItem:mockLog flags:MSFlagsDefault];
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -805,8 +792,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 
 - (void)testQueueFlushedAfterBatchSizeReached {
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   channel.configuration = [[MSChannelUnitConfiguration alloc] initWithGroupId:kMSTestGroupId
                                                                      priority:MSPriorityDefault
@@ -831,7 +817,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   for (int i = 0; i < itemsToAdd; ++i) {
     [channel enqueueItem:mockLog flags:MSFlagsCritical];
   }
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -846,8 +832,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testBatchQueueLimit {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSUInteger batchSizeLimit = 1;
   __block int currentBatchId = 1;
@@ -891,12 +876,12 @@ static NSString *const kMSTestGroupId = @"GroupId";
   }
 
   // Try to release one batch. It should trigger sending the last one.
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     XCTAssertNotNil(ingestionBlock);
     if (ingestionBlock) {
       ingestionBlock([@(1) stringValue], responseMock, nil, nil);
     }
-    [self enqueueChannelEndJobExpectation:queue];
+    [self enqueueChannelEndJobExpectation];
   });
 
   // Then
@@ -917,8 +902,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testNextBatchSentIfPendingQueueGotRoomAgain {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   XCTestExpectation *oneLogSentExpectation = [self expectationWithDescription:@"One log sent"];
   __block MSSendAsyncCompletionHandler ingestionBlock;
@@ -963,14 +947,14 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel enqueueItem:[self getValidMockLog] flags:MSFlagsDefault];
 
   // Try to release one batch.
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     XCTAssertNotNil(ingestionBlock);
     if (ingestionBlock) {
       ingestionBlock([@(1) stringValue], responseMock, nil, nil);
     }
 
     // Then
-    dispatch_async(queue, ^{
+    dispatch_async(channel.logsDispatchQueue, ^{
       // Batch queue should not be full;
       assertThatBool(channel.pendingBatchQueueFull, isFalse());
       [oneLogSentExpectation fulfill];
@@ -979,7 +963,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
       // Send another batch.
       currentBatchId++;
       [channel enqueueItem:[self getValidMockLog] flags:MSFlagsDefault];
-      [self enqueueChannelEndJobExpectation:queue];
+      [self enqueueChannelEndJobExpectation];
     });
   });
 
@@ -998,8 +982,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testDontForwardLogsToIngestionOnDisabled {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSUInteger batchSizeLimit = 1;
   id mockLog = [self getValidMockLog];
@@ -1018,7 +1001,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   // When
   [channel setEnabled:NO andDeleteDataOnDisabled:NO];
   [channel enqueueItem:mockLog flags:MSFlagsDefault];
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -1033,8 +1016,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testDeleteDataOnDisabled {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSUInteger batchSizeLimit = 1;
   id mockLog = [self getValidMockLog];
@@ -1051,7 +1033,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   // When
   [channel enqueueItem:mockLog flags:MSFlagsDefault];
   [channel setEnabled:NO andDeleteDataOnDisabled:YES];
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -1068,15 +1050,14 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testDontSaveLogsWhileDisabledWithDataDeletion {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id mockLog = [self getValidMockLog];
   OCMReject([self.storageMock saveLog:OCMOCK_ANY withGroupId:OCMOCK_ANY flags:MSFlagsDefault]);
   id delegateMock = OCMProtocolMock(@protocol(MSChannelDelegate));
   OCMStub([delegateMock channel:channel didCompleteEnqueueingLog:mockLog internalId:OCMOCK_ANY])
       .andDo(^(__unused NSInvocation *invocation) {
-        [self enqueueChannelEndJobExpectation:queue];
+        [self enqueueChannelEndJobExpectation];
       });
   [channel addDelegate:delegateMock];
 
@@ -1097,15 +1078,14 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testSaveLogsAfterReEnabled {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   [channel setEnabled:NO andDeleteDataOnDisabled:YES];
   id<MSLog> mockLog = [self getValidMockLog];
   id delegateMock = OCMProtocolMock(@protocol(MSChannelDelegate));
   OCMStub([delegateMock channel:channel didCompleteEnqueueingLog:mockLog internalId:OCMOCK_ANY])
       .andDo(^(__unused NSInvocation *invocation) {
-        [self enqueueChannelEndJobExpectation:queue];
+        [self enqueueChannelEndJobExpectation];
       });
   [channel addDelegate:delegateMock];
 
@@ -1129,7 +1109,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel setEnabled:NO andDeleteDataOnDisabled:NO];
   OCMStub([delegateMock channel:channel didCompleteEnqueueingLog:otherMockLog internalId:OCMOCK_ANY])
       .andDo(^(__unused NSInvocation *invocation) {
-        [self enqueueChannelEndJobExpectation:queue];
+        [self enqueueChannelEndJobExpectation];
       });
 
   // When
@@ -1150,8 +1130,8 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testPauseOnDisabled {
 
   // If.
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   [channel setEnabled:YES andDeleteDataOnDisabled:NO];
 
@@ -1159,7 +1139,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel setEnabled:NO andDeleteDataOnDisabled:NO];
 
   // Then
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
   [self waitForExpectationsWithTimeout:kMSTestTimeout
                                handler:^(NSError *error) {
                                  assertThatBool(channel.enabled, isFalse());
@@ -1174,31 +1154,31 @@ static NSString *const kMSTestGroupId = @"GroupId";
 
   // If
   __block BOOL result1, result2;
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id<MSIngestionProtocol> ingestionMock = OCMProtocolMock(@protocol(MSIngestionProtocol));
   channel.ingestion = ingestionMock;
 
   // When
   [channel setEnabled:NO andDeleteDataOnDisabled:NO];
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     [channel resumeWithIdentifyingObject:self];
   });
   [channel setEnabled:YES andDeleteDataOnDisabled:NO];
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     result1 = channel.paused;
   });
   [channel setEnabled:NO andDeleteDataOnDisabled:NO];
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     [channel pauseWithIdentifyingObject:self];
-    dispatch_async(queue, ^{
+    dispatch_async(channel.logsDispatchQueue, ^{
       [channel setEnabled:YES andDeleteDataOnDisabled:NO];
     });
-    dispatch_async(queue, ^{
+    dispatch_async(channel.logsDispatchQueue, ^{
       result2 = channel.paused;
     });
-    [self enqueueChannelEndJobExpectation:queue];
+    [self enqueueChannelEndJobExpectation];
   });
 
   // Then
@@ -1215,8 +1195,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testDelegateAfterChannelDisabled {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id delegateMock = OCMProtocolMock(@protocol(MSChannelDelegate));
   id mockLog = [self getValidMockLog];
@@ -1226,9 +1205,9 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel setEnabled:NO andDeleteDataOnDisabled:YES];
 
   // Enqueue now that the delegate is set.
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     [channel enqueueItem:mockLog flags:MSFlagsDefault];
-    [self enqueueChannelEndJobExpectation:queue];
+    [self enqueueChannelEndJobExpectation];
   });
 
   // Then
@@ -1248,8 +1227,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testDelegateAfterChannelPaused {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   NSObject *identifyingObject = [NSObject new];
   [self initChannelEndJobExpectation];
   id delegateMock = OCMProtocolMock(@protocol(MSChannelDelegate));
@@ -1258,9 +1236,9 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel addDelegate:delegateMock];
 
   // Pause now that the delegate is set.
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     [channel pauseWithIdentifyingObject:identifyingObject];
-    [self enqueueChannelEndJobExpectation:queue];
+    [self enqueueChannelEndJobExpectation];
   });
 
   // Then
@@ -1277,8 +1255,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testDelegateAfterChannelResumed {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   NSObject *identifyingObject = [NSObject new];
   [self initChannelEndJobExpectation];
   id delegateMock = OCMProtocolMock(@protocol(MSChannelDelegate));
@@ -1287,9 +1264,9 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel addDelegate:delegateMock];
 
   // Resume now that the delegate is set.
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     [channel resumeWithIdentifyingObject:identifyingObject];
-    [self enqueueChannelEndJobExpectation:queue];
+    [self enqueueChannelEndJobExpectation];
   });
 
   // Then
@@ -1306,8 +1283,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testDeviceAndTimestampAreAddedOnEnqueuing {
 
   // If
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   id<MSLog> mockLog = [self getValidMockLog];
   mockLog.device = nil;
   mockLog.timestamp = nil;
@@ -1323,8 +1299,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testDeviceAndTimestampAreNotOverwrittenOnEnqueuing {
 
   // If
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   id<MSLog> mockLog = [self getValidMockLog];
   MSDevice *device = mockLog.device = [MSDevice new];
   NSDate *timestamp = mockLog.timestamp = [NSDate new];
@@ -1340,8 +1315,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testEnqueuingLogDoesNotPersistFilteredLogs {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   OCMReject([self.storageMock saveLog:OCMOCK_ANY withGroupId:OCMOCK_ANY flags:MSFlagsDefault]);
 
@@ -1360,10 +1334,10 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel addDelegate:delegateMock2];
 
   // When
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     // Enqueue now that the delegate is set.
     [channel enqueueItem:log flags:MSFlagsDefault];
-    [self enqueueChannelEndJobExpectation:queue];
+    [self enqueueChannelEndJobExpectation];
   });
 
   // Then
@@ -1381,8 +1355,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testEnqueuingLogPersistsUnfilteredLogs {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id<MSLog> log = [self getValidMockLog];
   id delegateMock = OCMProtocolMock(@protocol(MSChannelDelegate));
@@ -1392,10 +1365,10 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel addDelegate:delegateMock];
 
   // When
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     // Enqueue now that the delegate is set.
     [channel enqueueItem:log flags:MSFlagsDefault];
-    [self enqueueChannelEndJobExpectation:queue];
+    [self enqueueChannelEndJobExpectation];
   });
 
   // Then
@@ -1412,8 +1385,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testDoesntResumeWhenNotAllPauseObjectsResumed {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSObject *object1 = [NSObject new];
   NSObject *object2 = [NSObject new];
@@ -1427,7 +1399,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel resumeWithIdentifyingObject:object3];
 
   // Then
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
   [self waitForExpectationsWithTimeout:kMSTestTimeout
                                handler:^(NSError *error) {
                                  if (error) {
@@ -1440,8 +1412,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testResumesWhenAllPauseObjectsResumed {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSObject *object1 = [NSObject new];
   NSObject *object2 = [NSObject new];
@@ -1456,7 +1427,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel resumeWithIdentifyingObject:object3];
 
   // Then
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
   [self waitForExpectationsWithTimeout:kMSTestTimeout
                                handler:^(NSError *error) {
                                  if (error) {
@@ -1469,8 +1440,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testResumeWhenOnlyPausedObjectIsDeallocated {
 
   // If
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   __weak NSObject *weakObject = nil;
   @autoreleasepool {
 
@@ -1498,8 +1468,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testResumeWithObjectThatDoesNotExistDoesNotResumeIfCurrentlyPaused {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSObject *object1 = [NSObject new];
   NSObject *object2 = [NSObject new];
@@ -1509,7 +1478,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel resumeWithIdentifyingObject:object2];
 
   // Then
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
   [self waitForExpectationsWithTimeout:kMSTestTimeout
                                handler:^(NSError *error) {
                                  if (error) {
@@ -1522,8 +1491,8 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testResumeWithObjectThatDoesNotExistDoesNotPauseIfPreviouslyResumed {
 
   // When
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [channel resumeWithIdentifyingObjectSync:[NSObject new]];
 
   // Then
@@ -1533,8 +1502,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testResumeTwiceInARowResumesWhenPaused {
 
   // If
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   NSObject *object = [NSObject new];
   [channel pauseWithIdentifyingObjectSync:object];
 
@@ -1549,8 +1517,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testResumeOnceResumesWhenPausedTwiceWithSingleObject {
 
   // If
-  dispatch_queue_t queue = [self createDispatchQueue];
-  MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   NSObject *object = [NSObject new];
   [channel pauseWithIdentifyingObjectSync:object];
   [channel pauseWithIdentifyingObjectSync:object];
@@ -1565,8 +1532,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testPausedTargetKeysNotAlteredWhenChannelUnitPaused {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSObject *object = [NSObject new];
   NSString *targetKey = @"targetKey";
@@ -1577,7 +1543,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel pauseWithIdentifyingObjectSync:object];
 
   // Then
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
   [self waitForExpectationsWithTimeout:kMSTestTimeout
                                handler:^(NSError *error) {
                                  if (error) {
@@ -1591,8 +1557,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testPausedTargetKeysNotAlteredWhenChannelUnitResumed {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSObject *object = [NSObject new];
   NSString *targetKey = @"targetKey";
@@ -1604,7 +1569,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel resumeWithIdentifyingObject:object];
 
   // Then
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
   [self waitForExpectationsWithTimeout:kMSTestTimeout
                                handler:^(NSError *error) {
                                  if (error) {
@@ -1618,8 +1583,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testNoLogsRetrievedFromStorageWhenTargetKeyIsPaused {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSString *targetKey = @"targetKey";
   NSString *token = [NSString stringWithFormat:@"%@-secret", targetKey];
@@ -1634,9 +1598,9 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel pauseSendingLogsWithToken:token];
 
   // When
-  dispatch_async(queue, ^{
+  dispatch_async(channel.logsDispatchQueue, ^{
     [channel flushQueue];
-    [self enqueueChannelEndJobExpectation:queue];
+    [self enqueueChannelEndJobExpectation];
   });
 
   // Then
@@ -1653,8 +1617,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testLogsStoredWhenTargetKeyIsPaused {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSString *targetKey = @"targetKey";
   NSString *token = [NSString stringWithFormat:@"%@-secret", targetKey];
@@ -1669,7 +1632,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel enqueueItem:log flags:MSFlagsDefault];
 
   // Then
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
   [self waitForExpectationsWithTimeout:kMSTestTimeout
                                handler:^(NSError *error) {
                                  if (error) {
@@ -1682,8 +1645,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testSendingPendingLogsOnResume {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSString *targetKey = @"targetKey";
   NSString *token = [NSString stringWithFormat:@"%@-secret", targetKey];
@@ -1695,7 +1657,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel resumeSendingLogsWithToken:token];
 
   // Then
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
   [self waitForExpectationsWithTimeout:kMSTestTimeout
                                handler:^(NSError *error) {
                                  if (error) {
@@ -1714,8 +1676,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testTargetKeyRemainsPausedWhenPausedASecondTime {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSString *targetKey = @"targetKey";
   NSString *token = [NSString stringWithFormat:@"%@-secret", targetKey];
@@ -1725,7 +1686,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   [channel pauseSendingLogsWithToken:token];
 
   // Then
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
   [self waitForExpectationsWithTimeout:kMSTestTimeout
                                handler:^(NSError *error) {
                                  if (error) {
@@ -1739,15 +1700,14 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testTargetKeyRemainsResumedWhenResumedASecondTime {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   NSString *targetKey = @"targetKey";
   NSString *token = [NSString stringWithFormat:@"%@-secret", targetKey];
   [channel pauseSendingLogsWithToken:token];
 
   // Then
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
   [self waitForExpectationsWithTimeout:kMSTestTimeout
                                handler:^(NSError *error) {
                                  if (error) {
@@ -1762,7 +1722,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 
   // When
   [channel resumeSendingLogsWithToken:token];
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -1778,7 +1738,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 
   // When
   [channel resumeSendingLogsWithToken:token];
-  [self enqueueChannelEndJobExpectation:queue];
+  [self enqueueChannelEndJobExpectation];
 
   // Then
   [self waitForExpectationsWithTimeout:kMSTestTimeout
@@ -1793,8 +1753,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 - (void)testEnqueueItemDoesNotSetUserIdWhenItAlreadyHasOne {
 
   // If
-  __block dispatch_queue_t queue = [self createDispatchQueue];
-  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault:queue];
+  __block MSChannelUnitDefault *channel = [self createChannelUnitDefault];
   [self initChannelEndJobExpectation];
   id<MSLog> enqueuedLog = [self getValidMockLog];
   NSString *expectedUserId = @"Fake-UserId";
@@ -1808,7 +1767,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
         MSAbstractLog *log;
         [invocation getArgument:&log atIndex:2];
         actualUserId = log.userId;
-        [self enqueueChannelEndJobExpectation:queue];
+        [self enqueueChannelEndJobExpectation];
       })
       .andReturn(YES);
 
@@ -1833,11 +1792,11 @@ static NSString *const kMSTestGroupId = @"GroupId";
   self.channelEndJobExpectation = [self expectationWithDescription:@"Channel job should be finished"];
 }
 
-- (void)enqueueChannelEndJobExpectation:(dispatch_queue_t)queue {
+- (void)enqueueChannelEndJobExpectation {
 
   // Enqueue end job expectation on channel's queue to detect when channel
   // finished processing.
-  dispatch_async(queue, ^{
+  dispatch_async(self.dispatchQueue, ^{
     [self.channelEndJobExpectation fulfill];
   });
 }
@@ -1863,15 +1822,35 @@ static NSString *const kMSTestGroupId = @"GroupId";
   return mockLog;
 }
 
-- (dispatch_queue_t)createDispatchQueue {
-  return dispatch_queue_create(nil, DISPATCH_QUEUE_SERIAL);
-}
-
-- (MSChannelUnitDefault *)createChannelUnitDefault:(dispatch_queue_t)queue {
+- (MSChannelUnitDefault *)createChannelUnitDefault {
+  dispatch_queue_t queue = dispatch_queue_create(nil, DISPATCH_QUEUE_SERIAL);
+  self.dispatchQueue = queue;
   return [[MSChannelUnitDefault alloc] initWithIngestion:self.ingestionMock
                                                  storage:self.storageMock
                                            configuration:self.configuration
                                        logsDispatchQueue:queue];
+}
+
+static void dispatch_queue_finalizer(void *context) {
+  dispatch_semaphore_signal((__bridge dispatch_semaphore_t)context);
+}
+
+- (void)waitDispatchQueue {
+
+  // Wait for all tasks to complete, then call suspend in the final task.
+  dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+  {
+    dispatch_object_t queue = self.dispatchQueue;
+    if (queue) {
+      dispatch_set_context(queue, (__bridge void *)semaphore);
+      dispatch_set_finalizer_f(queue, dispatch_queue_finalizer);
+    } else {
+      dispatch_semaphore_signal(semaphore);
+    }
+  }
+  if (dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC))) {
+    [NSException raise:@"Dispatch queue stuck during test tear down." format:@""];
+  }
 }
 
 @end
