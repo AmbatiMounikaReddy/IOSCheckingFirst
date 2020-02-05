@@ -65,7 +65,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
 }
 
 - (void)tearDown {
-  [self waitDispatchQueue];
+  XCTAssertNil(self.dispatchQueue);
 
   // Stop mocks.
   [self.storageMock stopMocking];
@@ -1286,6 +1286,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   id<MSLog> mockLog = [self getValidMockLog];
   mockLog.device = nil;
   mockLog.timestamp = nil;
+  [self initChannelEndJobExpectation];
 
   // When
   [channel enqueueItem:mockLog flags:MSFlagsDefault];
@@ -1293,6 +1294,13 @@ static NSString *const kMSTestGroupId = @"GroupId";
   // Then
   XCTAssertNotNil(mockLog.device);
   XCTAssertNotNil(mockLog.timestamp);
+  [self enqueueChannelEndJobExpectation];
+  [self waitForExpectationsWithTimeout:kMSTestTimeout
+                               handler:^(NSError *error) {
+                                 if (error) {
+                                   XCTFail(@"Expectation Failed with error: %@", error);
+                                 }
+                               }];
 }
 
 - (void)testDeviceAndTimestampAreNotOverwrittenOnEnqueuing {
@@ -1302,6 +1310,7 @@ static NSString *const kMSTestGroupId = @"GroupId";
   id<MSLog> mockLog = [self getValidMockLog];
   MSDevice *device = mockLog.device = [MSDevice new];
   NSDate *timestamp = mockLog.timestamp = [NSDate new];
+  [self initChannelEndJobExpectation];
 
   // When
   [channel enqueueItem:mockLog flags:MSFlagsDefault];
@@ -1309,6 +1318,13 @@ static NSString *const kMSTestGroupId = @"GroupId";
   // Then
   XCTAssertEqual(mockLog.device, device);
   XCTAssertEqual(mockLog.timestamp, timestamp);
+  [self enqueueChannelEndJobExpectation];
+  [self waitForExpectationsWithTimeout:kMSTestTimeout
+                               handler:^(NSError *error) {
+                                 if (error) {
+                                   XCTFail(@"Expectation Failed with error: %@", error);
+                                 }
+                               }];
 }
 
 - (void)testEnqueuingLogDoesNotPersistFilteredLogs {
@@ -1828,28 +1844,6 @@ static NSString *const kMSTestGroupId = @"GroupId";
                                                  storage:self.storageMock
                                            configuration:self.configuration
                                        logsDispatchQueue:queue];
-}
-
-static void dispatch_queue_finalizer(void *context) {
-  dispatch_semaphore_signal((__bridge dispatch_semaphore_t)context);
-}
-
-- (void)waitDispatchQueue {
-  dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
-  {
-    dispatch_object_t queue = self.dispatchQueue;
-    if (queue) {
-      CFIndex retainCount = CFGetRetainCount((__bridge CFTypeRef)queue) - 1;
-      NSLog(@"Dispatch queue still has %li references, trying to wait background tasks...", retainCount);
-      dispatch_set_context(queue, (__bridge void *)semaphore);
-      dispatch_set_finalizer_f(queue, dispatch_queue_finalizer);
-    } else {
-      dispatch_semaphore_signal(semaphore);
-    }
-  }
-  if (dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC))) {
-    XCTFail(@"Dispatch queue stuck during test tear down.");
-  }
 }
 
 @end
