@@ -335,7 +335,6 @@
 
   // Calls the completion handler with a fatal error.
   OCMStub([self.sut.ingestion sendAsync:OCMOCK_ANY completionHandler:OCMOCK_ANY]).andDo(^(NSInvocation *invocation) {
-    [invocation retainArguments];
     MSSendAsyncCompletionHandler handler;
     [invocation getArgument:&handler atIndex:3];
     handler(batchId, [MSHttpTestUtil createMockResponseForStatusCode:300 headers:nil], [NSData new], [NSError new]);
